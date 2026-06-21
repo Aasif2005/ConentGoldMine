@@ -8,7 +8,17 @@
 
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.23.6/babel.min.js"></script>
+<script>
+  // Force the CLASSIC JSX runtime so Babel emits React.createElement (React is a
+  // global from the UMD bundles above) instead of injecting
+  //   import { jsx as _jsx } from "react/jsx-runtime"
+  // which breaks a non-module inline script with:
+  //   "Cannot use import statement outside a module".
+  Babel.registerPreset('react-classic', {
+    presets: [[Babel.availablePresets.react, { runtime: 'classic' }]],
+  });
+</script>
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
@@ -50,14 +60,19 @@
   .grad-text{background:linear-gradient(110deg,#fff 20%,#b6acff 55%,#2bd4a4 90%);-webkit-background-clip:text;background-clip:text;color:transparent;}
   .grad-cta{background:linear-gradient(110deg,#6d5efc,#8a7bff 45%,#2bd4a4);background-size:200% 200%;}
   .reveal{opacity:0;}
-  .reveal.in{animation:fadeup .7s cubic-bezier(.2,.8,.2,1) both;}
+  .reveal.in{opacity:1;animation:fadeup .7s cubic-bezier(.2,.8,.2,1) both;}
+  /* Define the keyframe explicitly. The Tailwind Play CDN only emits keyframes
+     for animate-* utilities it finds in the markup, and nothing uses
+     `animate-fadeup`, so this @keyframes must live here or .reveal elements
+     stay stuck at opacity:0 (blank page). */
+  @keyframes fadeup{0%{opacity:0;transform:translateY(24px);}100%{opacity:1;transform:translateY(0);}}
   .grid-bg{background-image:radial-gradient(rgba(255,255,255,.05) 1px,transparent 1px);background-size:34px 34px;}
 </style>
 </head>
 <body class="bg-ink text-white font-sans antialiased">
 <div id="root"></div>
 
-<script type="text/babel" data-presets="react">
+<script type="text/babel" data-presets="react-classic">
 const { useState, useEffect, useRef } = React;
 
 /* ---------- tiny inline icon set ---------- */
