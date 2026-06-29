@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ContentGoldmine — Find what to post next</title>
+<meta name="description" content="Search any niche. ContentGoldmine reads YouTube titles, views, likes and comments, then tells you exactly what content to make next." />
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.23.6/babel.min.js"></script>
+<script>
+  // Force the CLASSIC JSX runtime so Babel emits React.createElement (React is a
+  // global from the UMD bundles) instead of injecting an ESM import that breaks
+  // a non-module inline script.
+  Babel.registerPreset('react-classic', {
+    presets: [[Babel.availablePresets.react, { runtime: 'classic' }]],
+  });
+</script>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Inter','system-ui','sans-serif'],
+          display: ['Sora','Inter','sans-serif'],
+        },
+        colors: {
+          ink: '#0a0b12',
+          panel: '#12131c',
+          brand: { 400:'#8a7bff', 500:'#6d5efc', 600:'#5847e0' },
+          mint: '#2bd4a4',
+        },
+        keyframes: {
+          fadeup: { '0%':{opacity:'0',transform:'translateY(18px)'}, '100%':{opacity:'1',transform:'translateY(0)'} },
+          blob: { '0%,100%':{transform:'translate(0,0) scale(1)'}, '33%':{transform:'translate(30px,-30px) scale(1.1)'}, '66%':{transform:'translate(-20px,20px) scale(0.95)'} },
+          grow: { '0%':{transform:'scaleX(0)'}, '100%':{transform:'scaleX(1)'} },
+        },
+        animation: {
+          fadeup: 'fadeup .6s cubic-bezier(.2,.8,.2,1) both',
+          blob: 'blob 18s ease-in-out infinite',
+        },
+      },
+    },
+  };
+</script>
+<style>
+  html{scroll-behavior:smooth;}
+  body{background:#0a0b12;}
+  .glass{background:rgba(255,255,255,.04);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.08);}
+  .grad-text{background:linear-gradient(110deg,#fff 20%,#b6acff 55%,#2bd4a4 90%);-webkit-background-clip:text;background-clip:text;color:transparent;}
+  .grad-cta{background:linear-gradient(110deg,#6d5efc,#8a7bff 45%,#2bd4a4);}
+  @keyframes fadeup{0%{opacity:0;transform:translateY(18px);}100%{opacity:1;transform:translateY(0);}}
+  .fadeup{animation:fadeup .6s cubic-bezier(.2,.8,.2,1) both;}
+  .grid-bg{background-image:radial-gradient(rgba(255,255,255,.05) 1px,transparent 1px);background-size:34px 34px;}
+  .bar{transform-origin:left;animation:grow .9s cubic-bezier(.2,.8,.2,1) both;}
+  @keyframes grow{0%{transform:scaleX(0);}100%{transform:scaleX(1);}}
+  .spin{animation:spin 1s linear infinite;}@keyframes spin{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body class="bg-ink text-white font-sans antialiased min-h-screen">
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react-classic">
+const { useState, useEffect, useRef } = React;
+
+/* ---------- helpers ---------- */
+const fmt = (n) => {
+  n = Number(n) || 0;
+  if (n >= 1e6) return (n/1e6).toFixed(1).replace(/\.0$/,'') + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1).replace(/\.0$/,'') + 'K';
+  return String(n);
+};
+const demandGrad = (d) => d >= 70 ? 'from-mint to-emerald-400' : d >= 40 ? 'from-amber-400 to-orange-500' : 'from-rose-400 to-rose-500';
+const demandLabel = (d) => d >= 70 ? 'High demand' : d >= 40 ? 'Growing' : 'Emerging';
+
+/* ---------- inline icons ---------- */
+const Icon = ({ name, className="w-5 h-5" }) => {
+  const paths = {
+    search: <><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></>,
+    play: <path d="M7 4v16l13-8z"/>,
+    eye: <><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></>,
+    like: <path d="M7 22V11M2 13v7a1 1 0 0 0 1 1h4V11H3a1 1 0 0 0-1 1zm5-2 4.5-8a2 2 0 0 1 3.6 1.5L14 9h5.5a2 2 0 0 1 2 2.4l-1.4 7A2 2 0 0 1 18 21H7"/>,
+    comment: <path d="M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12z"/>,
+    spark: <path d="M12 2l2.4 6.9L21 11l-6.6 2.1L12 20l-2.4-6.9L3 11l6.6-2.1z"/>,
+    fire: <path d="M12 3c1 3-1 4-1 6a3 3 0 0 0 6 0c0-1 0-2-1-3 3 2 5 5 5 8a8 8 0 0 1-16 0c0-4 4-6 4-9 0-1 1-2 3-2z"/>,
+    arrow: <path d="M5 12h14M13 6l6 6-6 6"/>,
+    pin: <><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></>,
+    grid: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>,
+  };
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+      strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      {paths[name]}
+    </svg>
+  );
+};
+
+const Stat = ({ value, label, icon }) => (
+  <div className="glass rounded-2xl p-4 sm:p-5 flex items-center gap-4">
+    <span className="grid place-items-center w-11 h-11 rounded-xl bg-white/5 text-brand-400 shrink-0"><Icon name={icon} className="w-5 h-5"/></span>
+    <div>
+      <div className="font-display text-2xl font-extrabold leading-none">{value}</div>
+      <div className="text-xs text-white/55 mt-1">{label}</div>
+    </div>
+  </div>
+);
+
+/* ---------- loading cycler ---------- */
+const STEPS = [
+  "Searching YouTube for your niche…",
+  "Pulling video titles, views & likes…",
+  "Reading top comments for real questions…",
+  "Clustering pain points with AI…",
+  "Ranking what to make next…",
+];
+const Loading = () => {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setI(v => (v + 1) % STEPS.length), 1400);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="glass rounded-3xl p-10 text-center max-w-xl mx-auto mt-10 fadeup">
+      <div className="mx-auto w-12 h-12 rounded-full border-2 border-white/15 border-t-brand-400 spin"></div>
+      <p className="mt-6 text-white/80 font-medium">{STEPS[i]}</p>
+      <p className="mt-2 text-xs text-white/40">This can take 20–60 seconds on the free tier.</p>
+    </div>
+  );
+};
+
+/* ---------- topic card ---------- */
+const TopicCard = ({ t, rank }) => (
+  <div className="glass rounded-2xl p-5 hover:-translate-y-1 hover:bg-white/[0.06] transition-all duration-200">
+    <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start gap-3">
+        <span className="grid place-items-center w-7 h-7 rounded-lg bg-white/5 text-xs font-bold text-brand-400 shrink-0 mt-0.5">{rank}</span>
+        <h3 className="font-semibold leading-snug">{t.title}</h3>
+      </div>
+      <span className="shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-brand-500/15 text-brand-400 border border-brand-500/20">{t.format || 'Video'}</span>
+    </div>
+    <div className="mt-4">
+      <div className="flex items-center justify-between text-xs mb-1.5">
+        <span className="text-white/50">{demandLabel(t.demand)}</span>
+        <span className="font-semibold">{t.demand}/100</span>
+      </div>
+      <div className="h-2 rounded-full bg-white/8 overflow-hidden">
+        <div className={`h-full rounded-full bg-gradient-to-r ${demandGrad(t.demand)} bar`} style={ { width: (t.demand || 0) + '%' } }></div>
+      </div>
+    </div>
+    {t.example_quote ? (
+      <p className="mt-4 text-sm text-white/60 italic border-l-2 border-white/15 pl-3">“{t.example_quote}”</p>
+    ) : null}
+  </div>
+);
+
+/* ---------- video card ---------- */
+const VideoCard = ({ v }) => (
+  <a href={v.url} target="_blank" rel="noopener noreferrer"
+     className="glass rounded-2xl p-5 block hover:-translate-y-1 hover:bg-white/[0.06] transition-all duration-200 group">
+    <div className="flex items-start gap-3">
+      <span className="grid place-items-center w-10 h-10 rounded-xl bg-rose-500/15 text-rose-400 shrink-0"><Icon name="play" className="w-5 h-5"/></span>
+      <div className="min-w-0">
+        <h3 className="font-semibold leading-snug line-clamp-2 group-hover:text-brand-400 transition-colors">{v.title || 'Untitled video'}</h3>
+        {v.channel ? <p className="text-xs text-white/45 mt-1">{v.channel}</p> : null}
+      </div>
+    </div>
+    <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-white/60">
+      <span className="inline-flex items-center gap-1.5"><Icon name="eye" className="w-4 h-4 text-white/40"/>{fmt(v.views)} views</span>
+      <span className="inline-flex items-center gap-1.5"><Icon name="like" className="w-4 h-4 text-white/40"/>{fmt(v.likes)} likes</span>
+      <span className="inline-flex items-center gap-1.5"><Icon name="comment" className="w-4 h-4 text-white/40"/>{fmt(v.comment_count)} comments</span>
+    </div>
+    {v.description ? (
+      <p className="mt-3 text-sm text-white/50 line-clamp-2">{v.description}</p>
+    ) : null}
+  </a>
+);
+
+/* ---------- where to post ---------- */
+const Communities = ({ list }) => {
+  const max = Math.max(1, ...list.map(c => c.mentions || 0));
+  return (
+    <div className="glass rounded-2xl p-5 space-y-3">
+      {list.map((c, i) => (
+        <div key={i} className="flex items-center gap-3">
+          <Icon name="pin" className="w-4 h-4 text-brand-400 shrink-0"/>
+          <span className="w-40 shrink-0 truncate text-sm font-medium">{c.name}</span>
+          <div className="flex-1 h-2 rounded-full bg-white/8 overflow-hidden">
+            <div className="h-full rounded-full grad-cta bar" style={ { width: Math.round(100 * (c.mentions || 0) / max) + '%' } }></div>
+          </div>
+          <span className="w-24 shrink-0 text-right text-xs text-white/50">
+            {c.subscribers ? fmt(c.subscribers) + ' subs' : fmt(c.mentions) + ' hits'}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const Section = ({ icon, title, sub, children }) => (
+  <section className="mt-10 fadeup">
+    <div className="flex items-center gap-3 mb-4">
+      <span className="grid place-items-center w-9 h-9 rounded-xl bg-white/5 text-brand-400"><Icon name={icon} className="w-5 h-5"/></span>
+      <div>
+        <h2 className="font-display text-xl font-bold leading-none">{title}</h2>
+        {sub ? <p className="text-xs text-white/45 mt-1">{sub}</p> : null}
+      </div>
+    </div>
+    {children}
+  </section>
+);
+
+/* ---------- main app ---------- */
+const SAMPLES = ['calisthenics','meal prep','personal finance','indie game dev','skincare'];
+
+const App = () => {
+  const [niche, setNiche] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+
+  const run = async (q) => {
+    const term = (q != null ? q : niche).trim();
+    if (!term) return;
+    setNiche(term);
+    setLoading(true); setError(''); setData(null);
+    try {
+      const res = await fetch('/api/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ niche: term }),
+      });
+      const json = await res.json();
+      if (json.error) setError(json.error);
+      setData(json);
+    } catch (e) {
+      setError('Could not reach the server. Is uvicorn running on http://localhost:8000 ?');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const stats = (data && data.stats) || {};
+  const topics = (data && data.topics) || [];
+  const videos = (data && data.videos) || [];
+  const communities = (data && data.communities) || [];
+  const hasResults = data && !data.error && (topics.length || videos.length);
+
+  return (
+    <div className="relative">
+      {/* background */}
+      <div className="pointer-events-none fixed inset-0 grid-bg opacity-60"></div>
+      <div className="pointer-events-none fixed -top-32 -left-24 w-[36rem] h-[36rem] rounded-full bg-brand-600/20 blur-3xl animate-blob"></div>
+      <div className="pointer-events-none fixed -bottom-40 -right-24 w-[34rem] h-[34rem] rounded-full bg-mint/10 blur-3xl animate-blob"></div>
+
+      <div className="relative max-w-5xl mx-auto px-4 sm:px-6 py-10">
+        {/* header */}
+        <div className="flex items-center justify-between">
+          <a href="#" className="flex items-center gap-2.5 font-display font-extrabold text-lg">
+            <span className="grid place-items-center w-9 h-9 rounded-xl grad-cta">⛏️</span>
+            ContentGoldmine
+          </a>
+          <a href="/landing" className="text-sm text-white/55 hover:text-white transition-colors">About</a>
+        </div>
+
+        {/* hero + search */}
+        <div className="text-center mt-14 sm:mt-20 fadeup">
+          <span className="inline-flex items-center gap-2 rounded-full glass px-4 py-1.5 text-xs font-semibold text-brand-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-mint animate-pulse"></span> Content Mode · YouTube
+          </span>
+          <h1 className="font-display text-4xl sm:text-5xl font-extrabold mt-6 leading-tight">
+            Know exactly <span className="grad-text">what to post next</span>
+          </h1>
+          <p className="text-white/60 mt-4 max-w-xl mx-auto">
+            Type any niche. We scan real YouTube titles, views, likes and comments — then rank the content your audience is begging for.
+          </p>
+
+          <form onSubmit={(e) => { e.preventDefault(); run(); }} className="mt-8 max-w-xl mx-auto">
+            <div className="glass rounded-2xl p-2 flex items-center gap-2 focus-within:border-brand-500/50 transition-colors">
+              <span className="pl-3 text-white/40"><Icon name="search" className="w-5 h-5"/></span>
+              <input
+                value={niche}
+                onChange={(e) => setNiche(e.target.value)}
+                placeholder="e.g. calisthenics, meal prep, personal finance…"
+                className="flex-1 bg-transparent outline-none py-3 text-white placeholder:text-white/35"
+                aria-label="Niche to analyze"
+              />
+              <button type="submit" disabled={loading}
+                className="grad-cta text-white font-semibold rounded-xl px-5 py-3 text-sm hover:-translate-y-0.5 transition-transform disabled:opacity-60 disabled:translate-y-0">
+                {loading ? 'Scanning…' : 'Find goldmine'}
+              </button>
+            </div>
+          </form>
+
+          {!data && !loading ? (
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+              <span className="text-xs text-white/40">Try:</span>
+              {SAMPLES.map(s => (
+                <button key={s} onClick={() => run(s)}
+                  className="text-xs rounded-full glass px-3 py-1.5 text-white/70 hover:text-white hover:bg-white/10 transition-colors">
+                  {s}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        {/* states */}
+        {loading ? <Loading /> : null}
+
+        {error && !loading ? (
+          <div className="glass rounded-2xl p-5 mt-8 max-w-xl mx-auto border-amber-500/30 text-amber-200/90 text-sm fadeup">
+            <strong className="font-semibold">Heads up:</strong> {error}
+          </div>
+        ) : null}
+
+        {/* results */}
+        {hasResults && !loading ? (
+          <div className="mt-12">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <h2 className="font-display text-2xl font-bold">
+                Results for <span className="grad-text">{data.niche}</span>
+              </h2>
+              {data.cached ? (
+                <span className="text-xs rounded-full bg-white/5 px-3 py-1 text-white/50">cached · cleared after 24h</span>
+              ) : (
+                <span className="text-xs rounded-full bg-mint/15 text-mint px-3 py-1">fresh scan</span>
+              )}
+            </div>
+
+            {/* stats */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mt-5">
+              <Stat icon="play"    value={fmt(stats.videos)}   label="Videos scanned" />
+              <Stat icon="comment" value={fmt(stats.comments)} label="Comments analyzed" />
+              <Stat icon="spark"   value={fmt(stats.titles)}   label="Titles analyzed" />
+              <Stat icon="fire"    value={fmt(stats.topics)}   label="Content ideas" />
+            </div>
+
+            {/* what to make */}
+            {topics.length ? (
+              <Section icon="fire" title="What to make" sub="Ranked by real audience demand">
+                <div className="grid sm:grid-cols-2 gap-4">
+                  {topics.map((t, i) => <TopicCard key={i} t={t} rank={i + 1} />)}
+                </div>
+              </Section>
+            ) : null}
+
+            {/* top videos analyzed */}
+            {videos.length ? (
+              <Section icon="play" title="Top videos analyzed" sub="The highest-signal videos behind these insights">
+                <div className="grid sm:grid-cols-2 gap-4">
+                  {videos.map((v, i) => <VideoCard key={i} v={v} />)}
+                </div>
+              </Section>
+            ) : null}
+
+            {/* where to post */}
+            {communities.length ? (
+              <Section icon="pin" title="Where to post" sub="Communities with the most activity for this niche">
+                <Communities list={communities} />
+              </Section>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* empty-but-no-error (e.g. quota) */}
+        {data && !hasResults && !error && !loading ? (
+          <div className="glass rounded-2xl p-8 mt-10 max-w-xl mx-auto text-center text-white/60 fadeup">
+            No results came back for “{data.niche}”. Try a broader niche, or check your YouTube API quota.
+          </div>
+        ) : null}
+
+        <footer className="mt-20 pt-8 border-t border-white/8 text-center text-xs text-white/35">
+          ContentGoldmine · Content Mode (YouTube). Reddit unlocks automatically once your API access is approved.
+        </footer>
+      </div>
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

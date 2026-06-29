@@ -1,0 +1,1 @@
+"""ContentGoldmine application package (MVC)."""

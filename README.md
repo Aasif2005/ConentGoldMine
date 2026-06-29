@@ -1,73 +1,64 @@
-# ContentGoldmine — MVP (Content Mode)
+# ContentGoldmine — Content Mode MVP
 
-Scans **Reddit + YouTube** for a niche and returns:
-- **What to make** — demand-ranked topics people are asking about
-- **Where to post** — communities ranked by activity
+Scan any niche, read real YouTube **titles, views, likes & comments**, and get a
+ranked list of what content to make next + where to post it.
 
-This is the lean MVP from the architecture. Two ways to run it:
-1. **CLI** (fastest validation): `python run_cli.py "fitness"`
-2. **Web app**: `uvicorn main:app --reload` then open http://localhost:8000
-
----
-
-## 1. Setup
-
-```bash
-cd content-goldmine-mvp
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env            # then fill in your keys
-```
-
-## 2. Get your API keys (all have free tiers)
-
-| Key | Where | Cost |
-|-----|-------|------|
-| `REDDIT_CLIENT_ID` / `SECRET` | https://www.reddit.com/prefs/apps → create app → type "script" | Free (100 queries/min) |
-| `YOUTUBE_API_KEY` | https://console.cloud.google.com → enable "YouTube Data API v3" | Free (10k units/day) |
-| `OPENAI_API_KEY` | https://platform.openai.com | ~$0.01 per scan (optional) |
-
-> **No keys yet?** The app still runs — it just returns an empty result and tells you which keys are missing. Add Reddit first (it's the richest source).
->
-> **No OpenAI key?** It automatically falls back to a keyword-based clustering so you can still see results for free.
-
-## 3. Run it
-
-```bash
-# CLI — prints topics + communities to your terminal
-python run_cli.py "fitness"
-
-# Web — the prototype UI, now backed by real data
-uvicorn main:app --reload
-```
-
----
-
-## Project structure
+## Project layout
 
 ```
 content-goldmine-mvp/
-├─ main.py                 # FastAPI web server
-├─ run_cli.py              # CLI entry point (no server needed)
-├─ config.py               # loads .env
-├─ collectors/
-│  ├─ reddit_collector.py  # Reddit posts + comments (PRAW)
-│  └─ youtube_collector.py # YouTube videos + comments
-├─ analysis/
-│  └─ analyzer.py          # clusters + scores topics (LLM or keyword fallback)
-├─ core/
-│  ├─ pipeline.py          # orchestrates a scan
-│  └─ cache.py             # 24h file cache (saves your API quota)
-└─ frontend/
-   └─ index.html           # simple UI that calls /api/scan
+  backend/                 ← all server code (MVC)
+    app/
+      models/              data + data sources
+        config.py            env config (Reddit / YouTube / OpenRouter / OpenAI)
+        schemas.py           pydantic request + ScanReport (API contract)
+        cache.py             24h file cache
+        youtube_source.py    YouTubeSource: titles + statistics + top comments
+        reddit_source.py     RedditSource: posts + comments (empty if no creds)
+      services/
+        analyzer.py          Analyzer: clusters items into ranked topics
+      controllers/
+        scan_controller.py   ScanController: sources -> analyzer -> view
+      views/
+        serializers.py       builds the JSON response shape
+      routes.py              FastAPI routes (POST /api/scan, GET /, GET /landing)
+    main.py                  entrypoint: app = FastAPI(); include_router(router)
+    run_cli.py               optional: scan from the terminal
+    requirements.txt
+    .env.example             copy to .env and fill in your keys
+    .gitignore
+  frontend/
+    search.html              niche search page (served at /)
+    landing.html             marketing landing page (served at /landing)
 ```
 
-## How a scan flows
+## Setup & run
 
-```
-niche → cache check → [Reddit + YouTube collectors] → analyzer (cluster+score) → rank communities → report (cached) → UI/CLI
+```bash
+cd backend
+cp .env.example .env        # then fill in YOUTUBE_API_KEY + OPENROUTER_API_KEY
+uv run uvicorn main:app --reload
+# or: pip install -r requirements.txt && uvicorn main:app --reload
 ```
 
-## ⚠️ Validation note
-Use the **CLI** to validate before building anything fancy. Run it for 5 niches, paste the output into a Google Doc, and show 5 potential customers. If they say "I'd pay for this" — *then* invest in the web app, accounts, and scaling.
+- Search page:   http://localhost:8000/
+- Landing page:  http://localhost:8000/landing
+- API:           `POST /api/scan`  body `{"niche": "calisthenics"}`
+- CLI:           `python run_cli.py calisthenics`
+
+## How the analysis is weighted (Content Mode)
+
+| Signal | Weight | Why |
+|---|---|---|
+| **Comments** | **3× (highest)** | Real questions/pain — the exact words people use |
+| **Titles** | 2× | What angles already exist + creator keywords (free) |
+| views / likes | demand proxy | Proven interest (free, from statistics) |
+| descriptions | minor | Occasionally reveals subtopics |
+| transcripts | skipped | Show what the creator said, not what the audience wants (v2) |
+
+Weighting lives in `backend/app/services/analyzer.py` (`WEIGHTS`).
+
+## Reddit
+
+Reddit unlocks automatically once you add `REDDIT_CLIENT_ID` /
+`REDDIT_CLIENT_SECRET` to `backend/.env` — no code changes needed.

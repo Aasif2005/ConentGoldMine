@@ -1,9 +1,10 @@
-"""Simple 24h file cache so you don't burn API quota re-scanning a niche."""
+"""Model layer: simple 24h file cache so you don't burn API quota re-scanning."""
 import json
 import os
 import time
 
-CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "cache")
+# app/models/cache.py -> project root is two levels up.
+CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "cache")
 TTL_SECONDS = 60 * 60 * 24  # 24 hours
 
 
